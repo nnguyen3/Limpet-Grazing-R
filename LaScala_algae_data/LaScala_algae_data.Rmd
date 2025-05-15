@@ -1,0 +1,71 @@
+---
+title: "LaScala-Gruenewald algae data"
+output: html_document
+date: "2023-04-17"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup}
+library(vegan)
+
+```
+
+## Limpets grazing on microalgae
+
+These data are from LaScala-Gruenewald et al. 2016, Marine Ecology Progress Series http://doi.org/10.3354/meps11774
+
+The dataset consists of estimates of percent cover of different microalgae groups
+growing on experimental plates placed in the intertidal zones. The plates had one
+of 4 different herbivore grazing treatments applied, either allowing no grazing,
+all natural grazers, or grazing by only members of the limpet species Lottia
+scabra, or the species Lottia austrodigitalis. Subsamples from the plates were
+preserved for scanning electron microscopy, and the morphotypes of microalgae 
+(or bare rubber grip tape on the plates) were visually identified and mean percent
+cover estimated based on 27 subsampled locations on each replicate plate. 
+
+Column 1: Site (1-6). This can be treated as a blocking factor. 4 treatment plates were installed together at each Site. 
+Column 2: Treatment – the form of grazing treatment present on the plates. Ungrazed plates were surrounded by a fence to exclude all gastropod grazers. Natural plates were open to allow neighboring gastropod grazers to access the plate. Lscabra – plates had 4 Lottia scabra limpets placed within a fence, so grazing should primarily be from that species. Laustro – plates had 4 Lottia austrodigitalis limpets placed within a fence, so grazing should primarily be from that species.
+Columns 3-20 represent average percent cover (from 27 subsamples on each plate) of 16 morphotypes of microalgae growing on settlement plates, plus non-biological material or rubber grip tape substrate. Percent cover was calculated based on morphotypes falling under 50 randomly located points
+
+
+```{r}
+micro = read.csv('microalgae_community_SEM_data.csv')
+micro$Site = factor(micro$Site)
+micro$Treatment = factor(micro$Treatment)
+```
+
+```{r}
+# Run the nMDS
+# micro.nmds = metaMDS(micro[,3:20], distance = 'bray', k = 2, trace = 0)
+
+micro2sqrt = sqrt(sqrt(micro[,3:20])) # Double square root transform of abundances
+micro2sqrt = vegdist(micro2sqrt, method = 'bray') # generate distance matrix
+# Run the nMDS
+micro.nmds = metaMDS(micro2sqrt, distance = 'bray', k = 2, trace = 0,
+                     autotransform=FALSE)
+
+micro.nmds  # print info
+```
+
+```{r microalgaeStressplot}
+# Show the stress plot
+stressplot(micro.nmds)
+```
+
+```{r plotMicroalgae}
+microplot = ordiplot(micro.nmds, type='none', 
+		main = paste0('Stress = ',round(micro.nmds$stress,dig=3)),
+		xaxt = 'n', yaxt = 'n')
+# Plot ellipses first
+ordiellipse(micro.nmds,kind='ehull', draw = 'polygon',
+		groups=micro$Treatment,label=F, col = 1:4)
+# Plot points over ellipses
+points(microplot, what = 'sites', pch = as.numeric(micro$Treatment),
+       col = as.numeric(micro$Treatment))
+# Add legend
+legend('topleft',legend=levels(micro$Treatment), col = 1:4,
+		pch = 1:4)
+
+```
+

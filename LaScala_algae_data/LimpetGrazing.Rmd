@@ -1,0 +1,265 @@
+---
+title: "Final "
+author: "Nhi Nguyen"
+date: "2025-04-28"
+output: html_document
+---
+
+```{r setup}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r cars}
+summary(cars)
+```
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+```{r setup}
+knitr::opts_chunk$set(echo = TRUE)
+
+install.packages("compositions")       #  CLR transformation
+install.packages("ggfortify")  # autoplot pca
+install.packages("tidyverse")
+
+library(vegan) # nmd
+library(ggplot2) # ggplot
+library(dplyr)
+library(reshape2)
+library(pheatmap)
+library(RColorBrewer)
+library(tidyr)
+library(compositions)
+library(ggfortify)
+library(tidyverse)
+
+
+```
+
+# Introduction
+
+Limpet grazing can strongly influence intertidal microalgae communities. This study explore whether grazing by different limpet species affect the composition and structure of algal communities.
+
+# Methods
+
+```{R}
+# Load dataset 
+algae_data <- read.csv("microalgae_community_SEM_data.csv")
+
+# Prepare metadata and morphotypes
+meta <- algae_data[, c("Site", "Treatment")] # use only the metadata colum (site number and treatment type)
+morpho <- algae_data[, 3:ncol(algae_data)] # keep all coulumn from column 3 and so on ( including algae ercent cover data)
+algae_all <- cbind(meta, morpho) # combine meta and morpho into 1 dataframe
+# metadata (who,what treatment) : non biological info ( site, treatment)
+# morpho (what kind) of algae were found, how much of each: include percent cover of each type of microalgae on each plate ( diatom, encrusting , bare space ,..) => what i want to analyze to see how grazing affect algae communities
+```
+
+# Bray-Curtis Dissimilarity and nMDS
+
+```{r nmds-analysis}
+# calc bray curtis dissimilary base on % cover 
+# Bray-Curtis distance
+algae_bray <- vegdist(morpho, method = "bray") # see how different each plate is in term of algae composition
+
+# nMDS
+# non metric multidimensional scaling using bray distance
+algae_nmds <- metaMDS(algae_bray, k = 2, trymax = 100)
+
+# Extract scores from the nmds for each plate ( for plotting)
+scores <- as.data.frame(scores(algae_nmds))
+# add thje treatment back so I can color point by treatment
+scores$Treatment <- meta$Treatment
+
+# make scatter plot for nmds results
+# Plot nMDS
+ggplot(scores, aes(x = NMDS1, y = NMDS2, color = Treatment)) +
+  geom_point(size = 3) +
+  stat_ellipse(type = "norm") +
+  theme_minimal() +
+  labs(title = "nMDS of Microalgae Communities by Treatment")
+# each point is a plate , allipse show how similar the groups are
+
+# Stress value= show how well the plot represent the data algae_nmds$stress 
+# 0.06 < 0.1 which is very good 
+```
+
+# PERMANOVA
+
+```{r}
+# permanova
+# test to see if comunity composition differs by treatment
+# whether algae % cover differ across grazing treatment
+adonis_result <- adonis2(morpho ~ Treatment + Site, data = meta, method = "bray")
+print(adonis_result) # see the result
+# answer the question : Does grazing type affect the algae comm?
+# are there location based dofference between site?
+```
+# Alpha Diversity Analysis
+
+```{R}
+# richness is to see how many different taxa 
+# shannon is to see both abundance and evenness
+#evenness is to see how even the taxa distrbuted
+# to see if grazing reduce overall diversity 
+# or if ungraze plot support richer, more even communities
+
+
+# alpha diversity
+diversity_data <- algae_all %>% # meta + morpho, creat diversity data with all data + 3 column (richness, shannon, evenness)
+  mutate(
+    Richness = specnumber(morpho), # count how many algae type are present in each row
+    Shannon = diversity(morpho, index = "shannon"),  # how many species , how evenly their abundancde are distribute
+    Evenness = Shannon / log(Richness) # cal evennes , standardize shannon by richness. show if species are equally represent or few type dominant
+  )
+
+# Plot alpha diversity : richness by treatment
+ggplot(diversity_data, aes(x = Treatment, y = Richness ))+
+  geom_boxplot(fill = "#FFB3BA") + theme_minimal() +
+  labs(title = "Species Richness by Treatment", x = "", y = "Richness (Number of Algal Morphotypes)")
+# richness is the number of different algae typpe on each plate
+# richness across dif treatment type
+# ungraze have highest richness
+# graze have lower richness , mean that grazing reduce species variety
+
+# plot alpha diversity : shannon by treatment
+ggplot(diversity_data, aes(x = Treatment, y = Shannon)) +
+  geom_boxplot(fill = "#D6CDEA") + theme_minimal() +
+  labs(title = "Shannon Diversity by Treatment", x = "", y = "Shannon")
+# richness + eveness
+# ungraze slightly higher diveristy
+# graze lower shannon diversity, with some variation
+#ungraze higher median = more species , more distribution
+# graze show wider spread = diversity is reduce with grazing, low diversity with tougher typoe
+# grazing not only reduce diversity but also allow dominance to survive ( skew to tougher , more resitstance tpoe)
+
+# Rarefaction curves
+# rarefaction is used to assess sampling effort when dealing with count data
+# this data represent percent cover instead of raw species count => rarefaction should not use here. So i focus on richness and evennes using alpha diversity 
+
+```
+# CLR- Transformation and PCA
+
+```{R}
+# avoid log(0)
+morpho_clr <- clr(morpho + 0.001) 
+# morpho is data of percent cove , exclude site and treatment
+# add 0.001 to avoid log of 0
+# clr is centered log-ratio transformation, make the data valid for euclidean distance for PCA
+
+# PCA plot 
+pca_clr <- prcomp(morpho_clr, center =TRUE, scale. =TRUE) # run pca on clr transformed data
+
+# prcomp = pca
+# center= true is to standardize location
+# scale. = true is to standardizes scale
+
+# plot
+autoplot(pca_clr, data = meta, colour = 'Treatment') +
+  stat_ellipse(aes(group = Treatment), linetype = "dashed") + # add dash ellispses around each treatment group to show clustering
+  labs(title = "PCA on CLR-transformed data") +
+  theme_minimal() +
+  theme(legend.position = "right")
+
+# each point is a plate
+# pc1 explain 28.73% , pc2 explain 14.07%
+# ungraze plate (purple) is more seperate from other
+# graze plate is more overlap, which could mean that they share similar community structure
+
+```
+
+
+# How algal cover differs across grazing treatments
+
+```{r}
+# boxplot
+
+# calc total algae cover by adding all morpho column
+algae_all$total_cover <- rowSums(morpho)
+
+# calc total cover for just the filamentous cyanobactereia group
+algae_all$Filamentous <- rowSums(algae_all[, c("Filcyano800x150", "Filcyano200x50", "FilcyanoBead10um", "FilcyanoBeadLess10um", "FilcyanoWidthLess7um")], na.rm = TRUE)
+
+# Boxplot 1: Total algae cover across treatments
+ggplot(algae_all, aes(x = Treatment, y = total_cover)) +
+  geom_boxplot(fill = "lavender") +
+  theme_minimal() +
+  labs(title = "Total Algal Cover by Treatment", y = "Total % Cover")
+
+# Boxplot 2: Filamentous Group cover across treatment
+ggplot(algae_all, aes(x = Treatment, y = Filamentous)) +
+  geom_boxplot(fill = "plum1") +
+  theme_minimal() +
+  labs(title = "Filamentous Cyanobacteria by Treatment", y = "Total % Cover")
+
+# Boxplot 3: a key sensitive morphotype ( filcyano 200x50)
+ggplot(algae_all, aes(x = Treatment, y = Filcyano200x50)) +
+  geom_boxplot(fill = "lightpink") +
+  theme_minimal() +
+  labs(title = "Filamentous Cyanobacteria (200x50) by Treatment", y = "Percent Cover")
+```
+
+# Stacked Barplot of Relative Composition
+
+```{r}
+# Calculate mean % cover of each morpho within each treatment
+prop_cover <- algae_data %>%
+  group_by(Treatment) %>% # group data by grazing treatment
+  summarise(across(where(is.numeric), mean, na.rm = TRUE)) %>% # calc mean of numeric columns
+  pivot_longer(-Treatment, names_to = "Morphotype", values_to = "Cover") # reshape for plotting
+# => create new dataframe where each row show the average % cover of specific morpho for each treatment group
+
+# Custom pastel 16 colors because I like these color
+my_pastel_colors <- c(
+  "#C4E17F", "#C1E1C1", "#ADD8E6", "#FFDAC1", "#FFB347",
+  "#E0BBE4", "#D5AAFF", "#FFFFB3", "#FFD1DC", "#B5EAD7",
+  "#D6CDEA", "#FF9AA2", "#FFB7B2", "#F9D5E5", "#BFD8B8",
+  "#A7D3F2", "#F8B195", "#FAD6A5", "#D0F0C0"
+)
+
+#ggplot for stacked boxplot
+ggplot(prop_cover, aes(x = Treatment, y = Cover, fill = Morphotype)) +
+  geom_bar(stat = "identity", position = "fill") +
+  scale_fill_manual(values = my_pastel_colors) +
+  theme_minimal() +
+  labs(title = "Relative Morphotype Composition by Treatment", y = "Proportion", x = "")
+# show how the community composition shift across treatment. 
+# each bar is 1 treatment, colored segment show the relative abundance of each morphotype
+```
+
+# Heatmap of Morphotype Cover (extra part to explore treatment-level differences in morphotypes )
+
+```{r}
+# calc the averg % cover of each morpho by treatmenbt group 
+morpho_means <- algae_data %>%
+  group_by(Treatment) %>%
+  summarise(across(where(is.numeric), mean, na.rm = TRUE))
+
+# prepare the data for heatmap
+morpho_only <- morpho_means[,-1] # take out the treatment column
+row.names(morpho_only) <- morpho_means$Treatment # make treatment as row
+# each row = a grazing treatment
+# each column = a morphotyoe
+# each cell = mean % cover
+
+# Custom pastel color palette
+pastel_palette <- colorRampPalette(c(
+  "#FFB3BA", "#B5EAD7","#FFFFB3" , "#D5AAFF", "#BAE1FF"
+))(100)
+# Generate the heatmap using pastel colors
+pheatmap(morpho_only,
+         cluster_rows = TRUE, #group similar treatment together
+         cluster_cols = TRUE, # group similar morpho together 
+         main = "Morphotype Cover by Treatment",
+         color = pastel_palette)
+
+```
+
+# Conclusions
+```{R}
+#Limpet grazing changes what kinds of algae grow on the plates.
+#Ungrazed plates had lots of soft, filamentous algae.
+#After grazing, those soft types decrease, and tougher, encrusting algae take over.
+#The graphs and statistics (like PERMANOVA) all show the same pattern .
+```
